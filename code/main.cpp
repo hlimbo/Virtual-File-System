@@ -124,7 +124,7 @@ struct VirtualAddress
 	//28th to 31th bits are unused (these are the leading bits)
 	VirtualAddress(unsigned int virt_addr)
 	{
-		assert(virt_addr >= 0);
+		assert(virt_addr >= 0 && virt_addr < VIRTUAL_ADDRESSES);
 		s = 0,p = 0,w = 0;
 		for(int i = 0;i < S;++i) 
 			w |= ((virt_addr >> i) & 0x01) << i;
@@ -142,8 +142,6 @@ int main(int argc,char* argv[])
 	int virtual_addr = 1048586;//1048576;//268435455;
 	cout << virtual_addr << endl;
 	VirtualAddress v(virtual_addr);
-
-	cout << VIRTUAL_ADDRESSES << endl;
 
 	cout << "s: " << v.s << endl;
 	cout << "p: " << v.p << endl;
