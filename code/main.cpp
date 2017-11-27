@@ -1,6 +1,12 @@
 #include <iostream>
+#include <fstream>
 #include <string.h>
+#include <string>
+#include <sstream>
 #include <cassert>
+#include <vector>
+#include <unordered_map>
+#include <errno.h>
 #include "test_specs.h"
 
 using namespace std;
@@ -124,7 +130,7 @@ struct VirtualAddress
 	//28th to 31th bits are unused (these are the leading bits)
 	VirtualAddress(unsigned int virt_addr)
 	{
-		assert(virt_addr >= 0 && virt_addr < VIRTUAL_ADDRESSES);
+		assert(virt_addr >= 0 && virt_addr < (unsigned int)VIRTUAL_ADDRESSES);
 		s = 0,p = 0,w = 0;
 		for(int i = 0;i < S;++i) 
 			w |= ((virt_addr >> i) & 0x01) << i;
@@ -135,17 +141,189 @@ struct VirtualAddress
 	}
 };
 
-int main(int argc,char* argv[])
+void virtual_constructor_test()
 {
-//TODO: be able to breakdown a Virtual Address into its 3 components: s (segment number), p (page number), w (page offset)
-
 	int virtual_addr = 1048586;//1048576;//268435455;
 	cout << virtual_addr << endl;
 	VirtualAddress v(virtual_addr);
-
 	cout << "s: " << v.s << endl;
 	cout << "p: " << v.p << endl;
 	cout << "w: " << v.w << endl;
+	cout << endl;
+
+	virtual_addr = 1048576;
+	cout << virtual_addr << endl;
+	VirtualAddress v2(virtual_addr);
+	cout << "s: " << v2.s << endl;
+	cout << "p: " << v2.p << endl;
+	cout << "w: " << v2.w << endl;
+	cout << endl;
+
+	virtual_addr = 268435455;
+	cout << virtual_addr << endl;
+	VirtualAddress v3(virtual_addr);
+	cout << "s: " << v3.s << endl;
+	cout << "p: " << v3.p << endl;
+	cout << "w: " << v3.w << endl;
+	cout << endl;
+
+	virtual_addr = 523788;
+	cout << virtual_addr << endl;
+	VirtualAddress v4(virtual_addr);
+	cout << "s: " << v4.s << endl;
+	cout << "p: " << v4.p << endl;
+	cout << "w: " << v4.w << endl;
+	cout << endl;
+
+	
+}
+
+void test_stringstreams()
+{
+	int values[15];
+	stringstream test("2 4 6 8 10 12");
+	if(test.good()) cout << "The test is good" << endl;
+	for(int i = 0;!test.eof() && i < 15;++i)
+	{
+		test >> values[i];
+	}
+
+	for(int i = 0;i < 15;++i)
+		cout << values[i] << endl;
+}
+
+//TODO: make a driver that can:
+//1. load "simulated" ram values from a file
+//1st line: PM[s] = f where s = 0th frame that ranges from 0 to 511 index values;(accesses segment table).
+//2nd line: PM[PM[s] + p] gives us the value of the associated PT entry's physical memory address.(access the page table)
+//e.g. 15 512 PT of segment 15 starts at physical address 512
+//e.g. 7 13 4096 page 7 of segment 13 starts at physical address 4096
+
+//2. read virtual addresses from a file and parse 0 as read and 1 as write
+//e.g. o1 Va1 o2 Va2 ... oi Vai = 0 1048576 1 1048586 1 1049088
+//e.g. 0 1048576 is read as "read virtual address 1048576 if it is valid (valid if virtual address is in physical memory)
+
+int main(int argc,char* argv[])
+{
+
+	//virtual_constructor_test();
+	//test_stringstreams();
+
+	if(argc != 3)
+	{
+		cerr << "Usage: " << argv[0] << " path/to/initPM.txt path/to/virtualAddresses.txt" << endl;
+		return -1;
+	}
+	
+	//first file initializes PM
+	ifstream inputFile;
+	inputFile.open(argv[1]);
+	if(inputFile.fail())
+	{
+		cerr << "Error " << argv[1] << ": " << strerror(errno) <<  endl;
+		return -1;
+	}	
+	if(inputFile.is_open())
+	{
+		//first line consists of si,fi pairs where si = segment number and fi = physical address of PT
+		vector<int> seg_nums;//these arrays will be ultimately stored into PM
+		vector<int> phys_addrs;
+		string line;
+		getline(inputFile,line);
+		if(!inputFile)
+		{
+			cerr << "failure attempt to read line 1 of file" << endl;
+			return -1;
+		}
+		stringstream firstline(line);
+		if(!firstline.good())
+		{
+			cerr << "error has occurred when reading the firstline of the input file" << endl;
+			return -1;
+		}
+		cout << "segment number | physical_address" << endl;
+		while(!firstline.eof())
+		{
+			int seg_num, phys_addr;
+			firstline >> seg_num >> phys_addr;
+			seg_nums.push_back(seg_num);
+			phys_addrs.push_back(phys_addr);
+		}
+		cout << seg_nums[0] << " | " << phys_addrs[0] << endl;
+
+		//second line consist of pj,sj,fj triplets where pj = page number, sj = segment number and fj = physical address of page pj of segment sj.
+		getline(inputFile,line);
+		if(!inputFile)
+		{
+			cerr << "failure attempt to read line 2 of file" << endl;
+			return -1;
+		}
+		stringstream secondline(line);
+		if(!secondline.good())
+		{
+			cerr << "error has occurred when reading the secondline of the input file" << endl;
+			return -1;
+		}
+		vector<int> seg_nums2;
+		vector<int> page_nums2;
+		vector<int> phys_addrs2;
+	
+		cout << "page_number | segment_number | physical_address" << endl;
+		while(!secondline.eof())
+		{
+			int page_num, seg_num, phys_addr;
+			secondline >> page_num >> seg_num >> phys_addr;
+			page_nums2.push_back(page_num);
+			seg_nums2.push_back(seg_num);
+			phys_addrs2.push_back(phys_addr);
+			cout << page_num << " " << seg_num << " " << phys_addr << endl;
+		}
+		
+		inputFile.close();
+	}
+
+	//second file reads the input file that contains virtual addresses and their supported ops 0 for read, 1 for write
+	//assume: each pair is stored on one line
+	ifstream inputFile2;
+	inputFile2.open(argv[2]);
+	if(inputFile2.fail())
+	{
+		cerr << "Error " << argv[2] << " : " <<  strerror(errno) << endl;
+		return -1;
+	}
+	if(inputFile2.is_open())
+	{
+		string line;
+		getline(inputFile2,line);
+		if(!inputFile2)
+		{
+			cerr << "Error: failure attempt to read line 1 of virtual address file" << endl;
+			return -1;
+		}
+		stringstream virtual_addr_input(line);
+		if(!virtual_addr_input.good())
+		{
+			cerr << "Error: failure when reading the first line of the input file" << endl;
+			return -1;
+		}
+		//read = false (0)
+		//write = true (1)
+		vector<bool> ops;//array of operations used to process on the corresponding virtual address entries
+		vector<int> virt_addrs;
+
+		cout << "operation : virtual address" << endl;
+		while(!virtual_addr_input.eof())
+		{
+			bool op;
+			int virt_addr;
+			virtual_addr_input >> op >> virt_addr;
+			ops.push_back(op);
+			virt_addrs.push_back(virt_addr);
+			cout << op << " " << virt_addr << endl;
+		}
+
+		inputFile2.close();
+	}
 
 	return 0;
 }
