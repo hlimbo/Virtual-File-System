@@ -12,7 +12,7 @@
 using namespace std;
 
 //simulated physical memory
-static int pm[PM_CAP];
+static int PM[PM_CAP];
 //indicates whether or not memory frame is taken (0 = free, 1 = taken)
 static int bitmap[BM];
 //each mask is 32 bit
@@ -244,12 +244,23 @@ int main(int argc,char* argv[])
 		cout << "segment number | physical_address" << endl;
 		while(!firstline.eof())
 		{
-			int seg_num, phys_addr;
+			int seg_num, phys_addr;//check
 			firstline >> seg_num >> phys_addr;
 			seg_nums.push_back(seg_num);
 			phys_addrs.push_back(phys_addr);
 		}
 		cout << seg_nums[0] << " | " << phys_addrs[0] << endl;
+
+		//load in address values of PT into ST
+		while(!seg_nums.empty() && !phys_addrs.empty())
+		{
+			int seg_num = seg_nums.back();
+			int phys_addr = phys_addrs.back();
+			PM[seg_num] = phys_addr;
+			seg_nums.pop_back();
+			phys_addrs.pop_back();
+		}
+
 
 		//second line consist of pj,sj,fj triplets where pj = page number, sj = segment number and fj = physical address of page pj of segment sj.
 		getline(inputFile,line);
@@ -271,12 +282,30 @@ int main(int argc,char* argv[])
 		cout << "page_number | segment_number | physical_address" << endl;
 		while(!secondline.eof())
 		{
-			int page_num, seg_num, phys_addr;
+			int page_num, seg_num, phys_addr;//check
 			secondline >> page_num >> seg_num >> phys_addr;
 			page_nums2.push_back(page_num);
 			seg_nums2.push_back(seg_num);
 			phys_addrs2.push_back(phys_addr);
 			cout << page_num << " " << seg_num << " " << phys_addr << endl;
+		}
+
+		//load in physical address into each page p of segment s
+		while(!seg_nums2.empty() && !page_nums2.empty() && !phys_addrs2.empty())
+		{
+			int seg_num = seg_nums2.back();
+			int page_num = page_nums2.back();
+			int phys_addr = phys_addrs2.back();
+
+			//cout << "PM[" << seg_num << "] = " << PM[seg_num] << endl;
+			//cout << "page_num = " << page_num << endl;
+			//cout << PM[seg_num] + page_num << endl;
+			//cout << "phys_addr: " << phys_addr << endl;
+			PM[PM[seg_num] + page_num] = phys_addr;	
+
+			seg_nums2.pop_back();
+			page_nums2.pop_back();
+			phys_addrs2.pop_back();
 		}
 		
 		inputFile.close();
@@ -325,5 +354,12 @@ int main(int argc,char* argv[])
 		inputFile2.close();
 	}
 
+
+	//validate here that input file 1 loads in data into PM successfully
+	for(int i = 0;i < PM_CAP;++i)
+	{
+		if(PM[i] == 0) continue;
+		cout << "PM[" << i << "] = " << PM[i] << endl;
+	}
 	return 0;
 }
