@@ -26,13 +26,14 @@ static void initBitmask()
 		MASK[i] = (MASK[i] | 0x01) << i;
 }
 
+//prints from msb to lsb order (left to right)
 static void printBits(int bmIndex,int* bitArray,int size)
 {
 	assert(size == BM);
 	assert(bmIndex >= 0 && bmIndex < BM);
 	//print from most significant bit to least significant bit
 	for(int i = BM - 1;i >=0;--i)
-		cout << ((bitArray[bmIndex] >> i) & 1) << " ";
+		cout << ((bitArray[bmIndex] >> i) & 1);//<< " ";
 	cout << endl;
 }
 
@@ -61,6 +62,14 @@ static void disableFrame(int frameIndex)
 	int bucket_index = frameIndex / BM;
 	int bit_index = frameIndex % BM;
 	bitmap[bucket_index] &= ~MASK[bit_index];
+}
+
+static bool isFrameEnabled(int frameIndex)
+{
+	assert(frameIndex >= 0 && frameIndex < FRAMES);
+	int bucket_index = frameIndex / BM;
+	int bit_index = frameIndex % BM;
+	return bitmap[bucket_index] & MASK[bit_index];
 }
 
 //converts bmIndex to the base frame index of physical memory
@@ -93,13 +102,29 @@ void bitmap_manip_tests()
 	{
 		cout << "bmIndex = 10" << endl;
 		printBitmap(10);
-		for(int i = baseFrameIndex(10);i < baseFrameIndex(10) + FRAME_CAP;++i)
+		for(int i = baseFrameIndex(10);i < baseFrameIndex(10) + BM;++i)
 			enableFrame(i);
 		printBitmap(10);
 
-		for(int i = baseFrameIndex(10);i < baseFrameIndex(10) + FRAME_CAP;i+=2)
+		//check if isFrameEnabled works ~ note: this prints from msb to lsb order (left to right)
+		cout << "areFramesEnabled: " << endl;
+		for(int i = baseFrameIndex(10) + BM - 1;i >= baseFrameIndex(10);--i)
+		{
+			cout << isFrameEnabled(i);
+		}
+		cout << endl;
+
+		//disable every other frame
+		for(int i = baseFrameIndex(10) + BM - 1;i >= baseFrameIndex(10);i-=2)
 			disableFrame(i);
+
 		printBitmap(10);
+		cout << "areFramesEnabled: " << endl;
+		for(int i = baseFrameIndex(10) + BM - 1;i >= baseFrameIndex(10);--i)
+		{
+			cout << isFrameEnabled(i);
+		}
+		cout << endl;
 	}
 	
 	{
@@ -109,8 +134,21 @@ void bitmap_manip_tests()
 		enableFrame(993);
 		enableFrame(1023);
 		printBitmap(31);
+		cout << "areFramesEnabled: " << endl;
+		for(int i = baseFrameIndex(31) + BM - 1;i >= baseFrameIndex(31);--i)
+		{
+			cout << isFrameEnabled(i);
+		}
+		cout << endl;
+
 		disableFrame(baseFrameIndex(31));
 		printBitmap(31);
+		cout << "areFramesEnabled: " << endl;
+		for(int i = baseFrameIndex(31) + BM - 1;i >= baseFrameIndex(31);--i)
+		{
+			cout << isFrameEnabled(i);
+		}
+		cout << endl;
 	}
 }
 
@@ -205,7 +243,7 @@ void test_stringstreams()
 
 int main(int argc,char* argv[])
 {
-
+	//bitmap_manip_tests();
 	//virtual_constructor_test();
 	//test_stringstreams();
 
@@ -214,6 +252,13 @@ int main(int argc,char* argv[])
 		cerr << "Usage: " << argv[0] << " path/to/initPM.txt path/to/virtualAddresses.txt" << endl;
 		return -1;
 	}
+	
+	//BITMASK AND BITMAP INITIALIZATION
+	initBitmask();
+	//init bitmap to be all 0s
+	memset(bitmap,0,sizeof(bitmap));
+	//enable frame 0 to be ST
+	enableFrame(0);
 	
 	//first file initializes PM
 	ifstream inputFile;
@@ -245,15 +290,18 @@ int main(int argc,char* argv[])
 		while(!firstline.eof())
 		{
 			int seg_num, phys_addr;//check
-			firstline >> seg_num >> phys_addr;
-			seg_nums.push_back(seg_num);
-			phys_addrs.push_back(phys_addr);
+			if(firstline >> seg_num >> phys_addr) //check if values being passed are valid
+			{
+				seg_nums.push_back(seg_num);
+				phys_addrs.push_back(phys_addr);
+				cout << seg_num << " | " << phys_addr << endl;
+			}
 		}
-		cout << seg_nums[0] << " | " << phys_addrs[0] << endl;
 
 		//load in address values of PT into ST
 		while(!seg_nums.empty() && !phys_addrs.empty())
 		{
+			//TODO: enable frame being set here in bitmap
 			int seg_num = seg_nums.back();
 			int phys_addr = phys_addrs.back();
 			PM[seg_num] = phys_addr;
@@ -283,12 +331,17 @@ int main(int argc,char* argv[])
 		while(!secondline.eof())
 		{
 			int page_num, seg_num, phys_addr;//check
-			secondline >> page_num >> seg_num >> phys_addr;
-			page_nums2.push_back(page_num);
-			seg_nums2.push_back(seg_num);
-			phys_addrs2.push_back(phys_addr);
-			cout << page_num << " " << seg_num << " " << phys_addr << endl;
+			
+			if(secondline >> page_num >> seg_num >> phys_addr) //check if inputs are valid
+			{
+				page_nums2.push_back(page_num);
+				seg_nums2.push_back(seg_num);
+				phys_addrs2.push_back(phys_addr);
+				cout << page_num << " " << seg_num << " " << phys_addr << endl;
+			}
 		}
+
+		inputFile.close();
 
 		//load in physical address into each page p of segment s
 		while(!seg_nums2.empty() && !page_nums2.empty() && !phys_addrs2.empty())
@@ -308,7 +361,6 @@ int main(int argc,char* argv[])
 			phys_addrs2.pop_back();
 		}
 		
-		inputFile.close();
 	}
 
 	//second file reads the input file that contains virtual addresses and their supported ops 0 for read, 1 for write
@@ -341,17 +393,114 @@ int main(int argc,char* argv[])
 		vector<int> virt_addrs;
 
 		cout << "operation : virtual address" << endl;
-		while(!virtual_addr_input.eof())
+		while(!virtual_addr_input.eof()) //oops reading the last line twice here..
 		{
 			bool op;
 			int virt_addr;
-			virtual_addr_input >> op >> virt_addr;
-			ops.push_back(op);
-			virt_addrs.push_back(virt_addr);
-			cout << op << " " << virt_addr << endl;
+			if(virtual_addr_input >> op >> virt_addr) //check if 2 consecutive inputs are valid numeric
+			{
+				ops.push_back(op);
+				virt_addrs.push_back(virt_addr);
+				cout << op << " " << virt_addr << endl;
+			}	
 		}
 
 		inputFile2.close();
+
+		//attempt to translate VA into PA by:
+		//1. breaking down each VA entry into s,p,w
+		//2. TODO: read access logic ~ DONE
+		//3. TODO: write access logic
+
+		for(unsigned int i = 0;i < ops.size() && i < virt_addrs.size();++i)
+		{
+			bool op = ops[i];
+			int virt_addr = virt_addrs[i];
+			//break VA into s,p,w
+			VirtualAddress v(virt_addr);
+
+			if(!op) // read
+			{
+				cout << "read:" << endl;
+				if(PM[v.s] == -1 || PM[PM[v.s] + v.p] == -1)
+				{
+					cout << "pf" << endl;
+				}
+				else if(PM[v.s] == 0 || PM[PM[v.s] + v.p] == 0)
+				{
+					cout << "error" << endl;
+				}
+				else
+				{
+					cout << "read physical_address: " << PM[PM[v.s] + v.p] + v.w << endl;
+				}
+			}
+			else //write
+			{
+				cout << "write:" << endl;
+				if(PM[v.s] == -1 || PM[PM[v.s] + v.p] == -1)
+				{
+				//	cout << "v.s = " << v.s << endl;
+				//	cout << "PM[" << v.s << "] = " << PM[v.s] << endl;
+				//	cout << "v.p = " << v.p << endl;
+				//	cout << "PM[PM[" << v.s << "] + " << v.p << "] = " << endl;
+					cout << "pf" << endl;
+				}
+				else if(PM[v.s] == 0)
+				{
+					//allocate new blank PT (all zeroes)
+					//locate new physical address of PT that contains all zeroes in 2 consecutive frames
+					cout << "creating an new blank PT" << endl;
+					bool canFindFreeFrame = false;
+					for(int frame_index = 0;frame_index < FRAMES - 1;++frame_index)
+					{
+						if(!isFrameEnabled(frame_index) && !isFrameEnabled(frame_index + 1))
+						{
+							canFindFreeFrame = true;
+							//update each frame to be enabled in the bitmap enabled
+							enableFrame(frame_index);
+							enableFrame(frame_index + 1);
+							//update ST entry ~ convert base frame index i to PA
+							PM[v.s] = frame_index * FRAME_CAP;
+							break;
+						}
+					}
+
+					if(!canFindFreeFrame)
+					{
+						cout << "error: cannot find 2 frames to allocate to" << endl;
+					}
+					//continue with translation process
+				}
+				else if(PM[PM[v.s] + v.p] == 0)
+				{
+					//create a new blank page
+					//update the PT entry ~ locate new physical address of PT entry
+					cout << "creating a new blank PT entry" << endl;
+					bool canFindFreeFrame = false;
+					for(int frame_index = 0;frame_index < FRAMES;++frame_index)
+					{
+						if(!isFrameEnabled(frame_index))
+						{
+							canFindFreeFrame = true;
+							enableFrame(frame_index);
+							PM[PM[v.s] + v.p] = frame_index * FRAME_CAP;
+							break;
+						}
+					}
+
+					if(!canFindFreeFrame)
+					{
+						cout << "error: cannot find 1 frame to allocate to" << endl;
+					}
+					//continue with translation process
+				}
+				else
+				{
+					cout << "write physical_addresss: " << PM[PM[v.s] + v.p] + v.w << endl;
+				}
+			}
+		}
 	}
 
 
