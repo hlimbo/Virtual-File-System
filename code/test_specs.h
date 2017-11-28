@@ -36,6 +36,8 @@
 //bitmap size
 #define BM (32)
 
+#define TLB_SIZE (4)
+
 //total number of virtual addresses 2^28 = 268435456
 const int VIRTUAL_ADDRESSES = std::pow(2,S + P + W);
 #endif

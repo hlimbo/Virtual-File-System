@@ -159,9 +159,10 @@ struct VirtualAddress
 	unsigned int s : 9; //segment number is 9 bits
 	unsigned int p : 10; //page number is 10 bits
 	unsigned int w : 9; //page offset is 9 bits
+	unsigned int sp : 19; //segment number with page number used for TLB
 
 	//breaks down virtual address into 3 components: s,p,w
-	//least significant bit order (need to clarify if assumption wrong FIX)
+	//least significant bit order
 	//0th to 8th bits represent w = page offset
 	//9th to 18th bits represent p = page number
 	//19th to 27th bits represent s = segment number
@@ -169,15 +170,62 @@ struct VirtualAddress
 	VirtualAddress(unsigned int virt_addr)
 	{
 		assert(virt_addr >= 0 && virt_addr < (unsigned int)VIRTUAL_ADDRESSES);
-		s = 0,p = 0,w = 0;
-		for(int i = 0;i < S;++i) 
+		s = 0,p = 0,w = 0,sp = 0;
+		for(int i = 0;i < W;++i) 
 			w |= ((virt_addr >> i) & 0x01) << i;
-		for(int i = S;i < S + P;++i)
-			p |= ((virt_addr >> i) & 0x01) << (i - S);
-		for(int i = (S + P);i < (S + P) + W;++i)
-			s |= ((virt_addr >> i) & 0x01) << (i - (S + P));
+		for(int i = W;i < W + P;++i)
+			p |= ((virt_addr >> i) & 0x01) << (i - W);
+		for(int i = (W + P);i < (W + P) + S;++i)
+			s |= ((virt_addr >> i) & 0x01) << (i - (W + P));
+
+		//get sp for TLB
+		for(int i = W;i < (W + P + S);++i)
+			sp |= ((virt_addr >> i) & 0x01) << (i - W);
+
 	}
 };
+
+struct TLB
+{
+	//0 least recently used to 3 most recently used
+	unsigned int lru[TLB_SIZE];
+	//obtained from VirtualAddresses
+	unsigned int sp[TLB_SIZE];
+	//physical addresses
+	unsigned int f[TLB_SIZE];
+}tlb;
+
+//returns the index ranging from 0 to 3 inclusive of the tlb
+//returns -1 if supplied virtual address sp could not be found
+static int findTLBIndex(unsigned int sp)
+{
+	for(int i = 0;i < TLB_SIZE;++i)
+	{
+		if(sp == tlb.sp[i])
+			return i;
+	}
+	return -1;
+}
+
+//sp obtained from VirtualAddress struct
+static void updateTLBMiss(const VirtualAddress& v)
+{
+	for(int tlb_index = 0;tlb_index < TLB_SIZE;++tlb_index)
+	{
+		if(tlb.lru[tlb_index] == 0)
+		{
+			tlb.lru[tlb_index] = 3;//set to mru
+			tlb.sp[tlb_index] = (unsigned int)v.sp;
+			tlb.f[tlb_index] = PM[PM[v.s] + v.p];//set to pa
+			for(int k = 0;k < TLB_SIZE;++k)
+			{
+				if(tlb_index == k) continue;
+				--tlb.lru[k];
+			}
+			break;
+		}
+	}
+}
 
 void virtual_constructor_test()
 {
@@ -187,6 +235,7 @@ void virtual_constructor_test()
 	cout << "s: " << v.s << endl;
 	cout << "p: " << v.p << endl;
 	cout << "w: " << v.w << endl;
+	cout << "sp: " << v.sp << endl;
 	cout << endl;
 
 	virtual_addr = 1048576;
@@ -195,6 +244,7 @@ void virtual_constructor_test()
 	cout << "s: " << v2.s << endl;
 	cout << "p: " << v2.p << endl;
 	cout << "w: " << v2.w << endl;
+	cout << "sp: " << v2.sp << endl;
 	cout << endl;
 
 	virtual_addr = 268435455;
@@ -203,6 +253,7 @@ void virtual_constructor_test()
 	cout << "s: " << v3.s << endl;
 	cout << "p: " << v3.p << endl;
 	cout << "w: " << v3.w << endl;
+	cout << "sp: " << v3.sp << endl;
 	cout << endl;
 
 	virtual_addr = 523788;
@@ -211,6 +262,7 @@ void virtual_constructor_test()
 	cout << "s: " << v4.s << endl;
 	cout << "p: " << v4.p << endl;
 	cout << "w: " << v4.w << endl;
+	cout << "sp: " << v4.sp << endl;
 	cout << endl;
 
 	
@@ -230,7 +282,7 @@ void test_stringstreams()
 		cout << values[i] << endl;
 }
 
-//TODO: make a driver that can:
+//TODO: make a driver that can: ~ DONE
 //1. load "simulated" ram values from a file
 //1st line: PM[s] = f where s = 0th frame that ranges from 0 to 511 index values;(accesses segment table).
 //2nd line: PM[PM[s] + p] gives us the value of the associated PT entry's physical memory address.(access the page table)
@@ -301,12 +353,15 @@ int main(int argc,char* argv[])
 		//load in address values of PT into ST
 		while(!seg_nums.empty() && !phys_addrs.empty())
 		{
-			//TODO: enable frame being set here in bitmap
 			int seg_num = seg_nums.back();
 			int phys_addr = phys_addrs.back();
 			PM[seg_num] = phys_addr;
 			seg_nums.pop_back();
 			phys_addrs.pop_back();
+			//TODO: enable frame being set here in bitmap ~ done but check
+			int frame_index = phys_addr / FRAME_CAP;
+			enableFrame(frame_index); //reserve 2 consecutive frames for PT
+			enableFrame(frame_index + 1);
 		}
 
 
@@ -330,7 +385,7 @@ int main(int argc,char* argv[])
 		cout << "page_number | segment_number | physical_address" << endl;
 		while(!secondline.eof())
 		{
-			int page_num, seg_num, phys_addr;//check
+			int page_num, seg_num, phys_addr;
 			
 			if(secondline >> page_num >> seg_num >> phys_addr) //check if inputs are valid
 			{
@@ -410,8 +465,9 @@ int main(int argc,char* argv[])
 		//attempt to translate VA into PA by:
 		//1. breaking down each VA entry into s,p,w
 		//2. TODO: read access logic ~ DONE
-		//3. TODO: write access logic
-
+		//3. TODO: write access logic ~ DONE
+		//4. TODO: optimize translations with TLB ~ DONE
+		
 		for(unsigned int i = 0;i < ops.size() && i < virt_addrs.size();++i)
 		{
 			bool op = ops[i];
@@ -421,30 +477,68 @@ int main(int argc,char* argv[])
 
 			if(!op) // read
 			{
+				//note: counts as a tlb miss if page fault or page table does not exist
 				cout << "read:" << endl;
 				if(PM[v.s] == -1 || PM[PM[v.s] + v.p] == -1)
 				{
-					cout << "pf" << endl;
+					cout << "m pf" << endl;
 				}
 				else if(PM[v.s] == 0 || PM[PM[v.s] + v.p] == 0)
 				{
-					cout << "error" << endl;
+					cout << "m err" << endl;
 				}
 				else
 				{
-					cout << "read physical_address: " << PM[PM[v.s] + v.p] + v.w << endl;
+					//locate resolved VA in tlb using sp
+					int tlbIndex = findTLBIndex((unsigned int)v.sp);
+					bool isTLBHit = tlbIndex != -1;
+					if(isTLBHit)
+					{
+						cout << "read tlb hit" << endl;
+						cout << "read pa: " << tlb.f[i] + v.w << endl;
+						tlb.lru[i] = 3;//set to most recently used
+						//decrement all lru values besides i by 1
+						for(int k = 0;k < TLB_SIZE;++k)
+						{
+							if(tlbIndex == k) continue;
+							--tlb.lru[k];
+						}
+					}
+
+					if(!isTLBHit) // tlb miss
+					{
+						cout << "read tlb miss" << endl;
+						cout << "read physical_address: " << PM[PM[v.s] + v.p] + v.w << endl;
+						//find lru[i] == 0 and set this lru to 3 (evict least recently used value)
+						updateTLBMiss(v);
+					//	for(int tlb_index = 0;tlb_index < TLB_SIZE;++tlb_index)
+					//	{
+					//		if(tlb.lru[tlb_index] == 0)
+					//		{
+					//			tlb.lru[tlb_index] = 3;//set to mru
+					//			tlb.sp[tlb_index] = (unsigned int)v.sp;
+					//			tlb.f[tlb_index] = PM[PM[v.s] + v.p];//set to pa
+					//			for(int k = 0;k < TLB_SIZE;++k)
+					//			{
+					//				if(tlb_index == k) continue;
+					//				--tlb.lru[k];
+					//			}
+					//			break;
+					//		}
+					//	}
+					}
 				}
 			}
 			else //write
 			{
 				cout << "write:" << endl;
 				if(PM[v.s] == -1 || PM[PM[v.s] + v.p] == -1)
-				{
+				{	//note: counts as tlb miss if write op cannot find PA
 				//	cout << "v.s = " << v.s << endl;
 				//	cout << "PM[" << v.s << "] = " << PM[v.s] << endl;
 				//	cout << "v.p = " << v.p << endl;
 				//	cout << "PM[PM[" << v.s << "] + " << v.p << "] = " << endl;
-					cout << "pf" << endl;
+					cout << "m pf" << endl;
 				}
 				else if(PM[v.s] == 0)
 				{
@@ -497,7 +591,28 @@ int main(int argc,char* argv[])
 				}
 				else
 				{
-					cout << "write physical_addresss: " << PM[PM[v.s] + v.p] + v.w << endl;
+					//locate resolved VA in tlb using sp
+					int tlbIndex = findTLBIndex((unsigned int)v.sp);
+					bool isTLBHit = tlbIndex != -1;
+					if(isTLBHit)
+					{
+						cout << "write tlb hit" << endl;
+						cout << "write pa: " << tlb.f[tlbIndex] + v.w << endl;
+						tlb.lru[i] = 3;//set to most recently used
+						//decrement all lru values besides i by 1
+						for(int k = 0;k < TLB_SIZE;++k)
+						{
+							if(tlbIndex == k) continue;
+							--tlb.lru[k];
+						}
+					}
+
+					if(!isTLBHit)
+					{
+						cout << "write tlb miss" << endl;
+						cout << "write physical_addresss: " << PM[PM[v.s] + v.p] + v.w << endl;
+						updateTLBMiss(v);
+					}
 				}
 			}
 		}
