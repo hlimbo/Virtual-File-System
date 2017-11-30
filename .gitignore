@@ -3,3 +3,5 @@
 # executables
 /[Bb]uilds/
 /[Nn]otes/
+# ignore vms executable
+/code/vms

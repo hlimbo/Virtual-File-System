@@ -375,6 +375,8 @@ void printPM()
 //e.g. o1 Va1 o2 Va2 ... oi Vai = 0 1048576 1 1048586 1 1049088
 //e.g. 0 1048576 is read as "read virtual address 1048576 if it is valid (valid if virtual address is in physical memory)
 
+//TODO: add parameter flag to command line to use TLB or not ~ DONE
+//TLB is used to optimize the look up times of VAs that are most recently used
 int main(int argc,char* argv[])
 {
 	//bitmap_manip_tests();
@@ -383,20 +385,21 @@ int main(int argc,char* argv[])
 
 	ofstream out;
 	streambuf* coutbuf = cout.rdbuf();//save old cout buf to restore before program terminates
-	if(argc != 3)
+	if(argc != 4)
 	{
-		if(argc != 4) // option to redirect output to file as optional last param
+		//TLB_FLAG must be either 0 or 1 where 0 = NO TLB, 1 = TLB
+		if(argc != 5) // option to redirect output to file as optional last param
 		{
-			cerr << "Usage: " << argv[0] << " path/to/initPM.txt path/to/virtualAddresses.txt [path/to/output.txt]" << endl;
+			cerr << "Usage: " << argv[0] << " path/to/initPM.txt path/to/virtualAddresses.txt TLB_FLAG [path/to/output.txt]" << endl;
 			return -1;
 		}
 		else //if last optional param was specified (e.g. path to output file)
 		{
 			//replace file output contents if file already exists
-			out.open(argv[3],ios::out | ios::trunc);
+			out.open(argv[4],ios::out | ios::trunc);
 			if(!out.is_open())
 			{
-				cerr << "Unable to open file: " << argv[3] << endl;
+				cerr << "Unable to open file: " << argv[4] << endl;
 				return -1;
 			}
 			else
@@ -405,7 +408,18 @@ int main(int argc,char* argv[])
 			}
 		}
 	}
-	
+
+	//validate if TLB_FLAG passed is either 0 or 1
+	stringstream tlb_value(argv[3]);
+	bool tlb_flag;
+	if(!tlb_value.good() || !(tlb_value >> tlb_flag))
+	{
+			cerr << "Usage: " << argv[0] << " path/to/initPM.txt path/to/virtualAddresses.txt TLB_FLAG [path/to/output.txt]" << endl;
+			cerr << "tlb_flag invalid: " << tlb_flag << " expected (0 = no tlb or 1 = tlb)" << endl;
+			return -1;
+
+	}
+
 	//BITMASK AND BITMAP INITIALIZATION
 	initBitmask();
 	//init bitmap to be all 0s
@@ -455,8 +469,6 @@ int main(int argc,char* argv[])
 			}
 		}
 
-		//debug to print out to see if proper frame numbers were allocated
-		//vector<int> frame_indices;
 		//load in address values of PT into ST
 		while(!seg_nums.empty() && !phys_addrs.empty())
 		{
@@ -474,8 +486,6 @@ int main(int argc,char* argv[])
 				enableFrame(frame_index); //reserve 2 consecutive frames for PT
 				enableFrame(frame_index + 1);
 
-			//	frame_indices.push_back(frame_index);
-			//	frame_indices.push_back(frame_index + 1);
 			}
 		}
 
@@ -544,6 +554,8 @@ int main(int argc,char* argv[])
 			{
 				PM[seg_num] = phys_addr;
 				int frame_index = phys_addr / FRAME_CAP;
+				//this may be ambiguous here since we don't know if the PA undefined here
+				//is for a PT or for data/program table (e.g. we can either allocate 1 or 2 frames here)
 				enableFrame(frame_index);
 				enableFrame(frame_index + 1);
 			}
@@ -628,13 +640,19 @@ int main(int argc,char* argv[])
 				//cout << "read:" << endl;
 				if(PM[v.s] == -1 || PM[PM[v.s] + v.p] == -1)
 				{
-					cout << "m pf ";// << endl;
+					if(tlb_flag == true)
+						cout << "m pf ";// << endl;
+					else
+						cout << "pf ";
 				}
 				else if(PM[v.s] == 0 || PM[PM[v.s] + v.p] == 0)
 				{
-					cout << "m err ";// << endl;
+					if(tlb_flag == true)
+						cout << "m err ";// << endl;
+					else
+						cout << "err ";
 				}
-				else
+				else if(tlb_flag == true)
 				{
 					//locate resolved VA in tlb using sp
 					int tlbIndex = findTLBIndex(v.sp);
@@ -663,26 +681,14 @@ int main(int argc,char* argv[])
 						//cout << "read tlb miss" << endl;
 						//cout << "read physical_address: " << PM[PM[v.s] + v.p] + v.w << endl;
 						cout << "read m " << PM[PM[v.s] + v.p] + v.w << " ";// << endl;
-						//find lru[i] == 0 and set this lru to 3 (evict least recently used value)
 					//	printTLB();
 						updateTLBMiss(v);
 					//	printTLB();
-					//	for(int tlb_index = 0;tlb_index < TLB_SIZE;++tlb_index)
-					//	{
-					//		if(tlb.lru[tlb_index] == 0)
-					//		{
-					//			tlb.lru[tlb_index] = 3;//set to mru
-					//			tlb.sp[tlb_index] = (unsigned int)v.sp;
-					//			tlb.f[tlb_index] = PM[PM[v.s] + v.p];//set to pa
-					//			for(int k = 0;k < TLB_SIZE;++k)
-					//			{
-					//				if(tlb_index == k) continue;
-					//				--tlb.lru[k];
-					//			}
-					//			break;
-					//		}
-					//	}
 					}
+				}
+				else //no tlb
+				{
+					cout << PM[PM[v.s] + v.p] + v.w << " ";//print PA
 				}
 			}
 			else //write
@@ -694,7 +700,10 @@ int main(int argc,char* argv[])
 				//	cout << "PM[" << v.s << "] = " << PM[v.s] << endl;
 				//	cout << "v.p = " << v.p << endl;
 				//	cout << "PM[PM[" << v.s << "] + " << v.p << "] = " << endl;
-					cout << "m pf ";// << endl;
+					if(tlb_flag == true)
+						cout << "m pf ";// << endl;
+					else
+						cout << "pf ";
 				}
 				else if(PM[v.s] == 0) //Q: is it possible to have a tlb hit when PT or PT entry not yet allocated?
 				{
@@ -711,10 +720,18 @@ int main(int argc,char* argv[])
 							//update each frame to be enabled in the bitmap enabled
 							enableFrame(frame_index);
 							enableFrame(frame_index + 1);
-							//update ST entry ~ convert base frame index i to PA
+							//update ST entry ~ convert base frame index i to PA		
 							PM[v.s] = frame_index * FRAME_CAP;
-							updateTLBMiss(v);
-							cout << "m " << PM[PM[v.s] + v.p] + v.w << endl;
+							
+							if(tlb_flag == true)
+							{
+								updateTLBMiss(v);
+								cout << "m " << PM[PM[v.s] + v.p] + v.w << endl;
+							}
+							else
+							{
+								cout << PM[PM[v.s] + v.p] + v.w << " ";
+							}
 							break;
 						}
 					}
@@ -742,8 +759,16 @@ int main(int argc,char* argv[])
 							//cout << PM[v.s] << " " << PM[PM[v.s] + v.p] << " | " << endl;
 							//cout << "v.w = " << v.w << "|";
 							PM[PM[v.s] + v.p] = (frame_index * FRAME_CAP);
-							updateTLBMiss(v);
-							cout << "m " << PM[PM[v.s] + v.p] + v.w << " ";//<< endl;
+							
+							if(tlb_flag == true)
+							{
+								updateTLBMiss(v);
+								cout << "m " << PM[PM[v.s] + v.p] + v.w << " ";//<< endl;
+							}
+							else
+							{
+								cout << PM[PM[v.s] + v.p] + v.w << " ";
+							}
 							break;
 						}
 					}
@@ -757,35 +782,34 @@ int main(int argc,char* argv[])
 				else
 				{
 					//locate resolved VA in tlb using sp
-					int tlbIndex = findTLBIndex(v.sp);
-					bool isTLBHit = tlbIndex != -1;
-					if(isTLBHit)
-					{
-						//cout << "write tlb hit" << endl;
-						//cout << "write pa: " << tlb.f[tlbIndex] + v.w << endl;
-					
-						//cout << "tlbIndex: " << tlbIndex << endl;
-						cout << "write h " << tlb.f[tlbIndex] + v.w << " ";// << endl;
-					//	printTLB();
-						updateTLBHit(tlbIndex);
-					//	printTLB();
-					//	tlb.lru[tlbIndex] = 3;//set to most recently used
-					//	//decrement all lru values besides i by 1
-					//	for(int k = 0;k < TLB_SIZE;++k)
-					//	{
-					//		if(tlbIndex == k) continue;
-					//		--tlb.lru[k];
-					//	}
+					if(tlb_flag == true)
+					{					
+						int tlbIndex = findTLBIndex(v.sp);
+						bool isTLBHit = tlbIndex != -1;
+						if(isTLBHit)
+						{
+							//cout << "write tlb hit" << endl;
+							//cout << "write pa: " << tlb.f[tlbIndex] + v.w << endl;	
+							//cout << "tlbIndex: " << tlbIndex << endl;
+							cout << "write h " << tlb.f[tlbIndex] + v.w << " ";// << endl;
+						//	printTLB();
+							updateTLBHit(tlbIndex);
+						//	printTLB();
+						
+						}
+						else if(!isTLBHit)
+						{
+						//	cout << "write tlb miss" << endl;
+						//	cout << "write physical_addresss: " << PM[PM[v.s] + v.p] + v.w << endl;
+							cout << "write m " << PM[PM[v.s] + v.p] + v.w << " ";//<< endl;
+						//	printTLB();
+							updateTLBMiss(v);
+						//	printTLB();
+						}
 					}
-
-					if(!isTLBHit)
+					else //no tlb
 					{
-					//	cout << "write tlb miss" << endl;
-					//	cout << "write physical_addresss: " << PM[PM[v.s] + v.p] + v.w << endl;
-						cout << "write m " << PM[PM[v.s] + v.p] + v.w << " ";//<< endl;
-					//	printTLB();
-						updateTLBMiss(v);
-					//	printTLB();
+						cout << PM[PM[v.s] + v.p] + v.w << " ";
 					}
 				}
 			}
