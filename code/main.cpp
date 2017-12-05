@@ -42,10 +42,10 @@ static void printBitmap(int bmIndex)
 	printBits(bmIndex,bitmap,BM);
 }
 
-static void printBitmask(int bmIndex)
-{
-	printBits(bmIndex,MASK,BM);
-}
+//static void printBitmask(int bmIndex)
+//{
+//	printBits(bmIndex,MASK,BM);
+//}
 
 //maps from 0 to 1023 bits where each bit represents a memory frame in physical memory
 static void enableFrame(int frameIndex)
@@ -251,17 +251,17 @@ static void initTLB()
 }
 
 //debug
-static void printTLB()
-{
-	for(int i = 0;i < TLB_SIZE;++i)
-	{
-		cout << "tlb" << i << endl;
-		cout << "lru: " << tlb.lru[i] << endl;
-		cout << "sp: " << tlb.sp[i] << endl;
-		cout << "f: " << tlb.f[i] << endl;
-		cout << endl;
-	}
-}
+//static void printTLB()
+//{
+//	for(int i = 0;i < TLB_SIZE;++i)
+//	{
+//		cout << "tlb" << i << endl;
+//		cout << "lru: " << tlb.lru[i] << endl;
+//		cout << "sp: " << tlb.sp[i] << endl;
+//		cout << "f: " << tlb.f[i] << endl;
+//		cout << endl;
+//	}
+//}
 
 void virtual_constructor_test()
 {
@@ -337,6 +337,14 @@ void virtual_constructor_test()
 	cout << "sp: " << v8.sp << endl;
 	cout << endl;
 
+	virtual_addr = 7;
+	cout << virtual_addr << endl;
+	VirtualAddress v9(virtual_addr);
+	cout << "s: " << v9.s << endl;
+	cout << "p: " << v9.p << endl;
+	cout << "w: " << v9.w << endl;
+	cout << "sp: " << v9.sp << endl;
+	cout << endl;
 
 }
 void test_stringstreams()
@@ -489,21 +497,6 @@ int main(int argc,char* argv[])
 			}
 		}
 
-
-	//	cout << "frame indices allocated" << endl;
-	//	while(!frame_indices.empty())
-	//	{
-	//		int f2 = frame_indices.back();
-	//		frame_indices.pop_back();
-	//		int f1 = frame_indices.back();
-	//		frame_indices.pop_back();
-	//		cout << "frames: " << f1 << ", " << f2 << endl;
-	//	}
-
-		//cout << "Segment Table" << endl;
-		//printPM();
-		//cout << endl << endl;
-
 		//second line consist of pj,sj,fj triplets where pj = page number, sj = segment number and fj = physical address of page pj of segment sj.
 		getline(inputFile,line);
 		if(!inputFile)
@@ -544,25 +537,38 @@ int main(int argc,char* argv[])
 			int page_num = page_nums2.back();
 			int phys_addr = phys_addrs2.back();
 
-			//cout << "PM[" << seg_num << "] = " << PM[seg_num] << endl;
-			//cout << "page_num = " << page_num << endl;
-			//cout << PM[seg_num] + page_num << endl;
-			//cout << "phys_addr: " << phys_addr << endl;
 			
 			//if PA not defined for PT, use the first page of the page table as the PA	
 			if(PM[seg_num] == 0)
 			{
-				PM[seg_num] = phys_addr;
+		//		int fr = -1;
+		//		for(int i = 0;i < FRAMES;++i)
+		//		{
+		//			if(!isFrameEnabled(i))
+		//			{
+		//				fr = i;
+		//				break;
+		//			}
+		//		}
+		//		//enable PT
+		//		PM[seg_num] = fr * FRAME_CAP;
 				int frame_index = phys_addr / FRAME_CAP;
-				//this may be ambiguous here since we don't know if the PA undefined here
-				//is for a PT or for data/program table (e.g. we can either allocate 1 or 2 frames here)
 				enableFrame(frame_index);
 				enableFrame(frame_index + 1);
 			}
 			else
 			{
-				PM[PM[seg_num] + page_num] = phys_addr;	
+				//enable data/program table
+				int frame_index = phys_addr / FRAME_CAP;
+				PM[PM[seg_num] + page_num] = phys_addr;
+				enableFrame(frame_index);
 			}
+			
+	//		cout << "PM[" << seg_num << "] = " << PM[seg_num] << endl;
+	//		cout << "page_num = " << page_num << endl;
+	//		cout << PM[seg_num] + page_num << endl;
+	//		cout << "PM[" << PM[seg_num] <<  " + " << page_num << "] = " << PM[PM[seg_num] + page_num] << endl;
+	//		cout << "phys_addr: " << phys_addr << endl;
 
 			seg_nums2.pop_back();
 			page_nums2.pop_back();
@@ -663,24 +669,17 @@ int main(int argc,char* argv[])
 						//cout << "read pa: " << tlb.f[tlbIndex] + v.w << endl;
 		
 					//	printTLB();
-						cout << "read h " << tlb.f[tlbIndex] + v.w << " ";//endl;
+						cout << "h " << tlb.f[tlbIndex] + v.w << " ";//endl;
 						updateTLBHit(tlbIndex);	
 					//	printTLB();//debug
 
-				//		tlb.lru[tlbIndex] = 3;//set to most recently used
-				//		//decrement all lru values besides i by 1
-				//		for(int k = 0;k < TLB_SIZE;++k)
-				//		{
-				//			if(tlbIndex == k) continue;
-				//			--tlb.lru[k];
-				//		}
 					}
 
 					if(!isTLBHit) // tlb miss
 					{
 						//cout << "read tlb miss" << endl;
 						//cout << "read physical_address: " << PM[PM[v.s] + v.p] + v.w << endl;
-						cout << "read m " << PM[PM[v.s] + v.p] + v.w << " ";// << endl;
+						cout << "m " << PM[PM[v.s] + v.p] + v.w << " ";// << endl;
 					//	printTLB();
 						updateTLBMiss(v);
 					//	printTLB();
@@ -710,7 +709,7 @@ int main(int argc,char* argv[])
 					//allocate new blank PT (all zeroes)
 					//allocate new physical address of PT that contains all zeroes in 2 consecutive frames
 					//TODO: create test cases here to see if this logic works well
-					cout << "creating an new blank PT" << endl;
+					//cout << "creating an new blank PT" << endl;
 					bool canFindFreeFrame = false;
 					for(int frame_index = 0;frame_index < FRAMES - 1;++frame_index)
 					{
@@ -738,7 +737,7 @@ int main(int argc,char* argv[])
 
 					if(!canFindFreeFrame)
 					{
-						cout << "error: cannot find 2 frames to allocate to" << endl;
+						cerr << "error: cannot find 2 frames to allocate to" << endl;
 					}
 					//continue with translation process
 				}
@@ -752,13 +751,14 @@ int main(int argc,char* argv[])
 					{
 						if(!isFrameEnabled(frame_index))
 						{
-							canFindFreeFrame = true;
-							enableFrame(frame_index);
 							//cout << "enable frame: " << frame_index << " | ";
 							//cout << "v.s = " << v.s << " v.p = " << v.p << " v.w = " << v.w << " virt_addr = " << virt_addr << " | ";
 							//cout << PM[v.s] << " " << PM[PM[v.s] + v.p] << " | " << endl;
 							//cout << "v.w = " << v.w << "|";
+							
 							PM[PM[v.s] + v.p] = (frame_index * FRAME_CAP);
+							enableFrame(frame_index);
+							canFindFreeFrame = true;
 							
 							if(tlb_flag == true)
 							{
@@ -775,7 +775,7 @@ int main(int argc,char* argv[])
 
 					if(!canFindFreeFrame)
 					{
-						cout << "error: cannot find 1 frame to allocate to" << endl;
+						cerr << "error: cannot find 1 frame to allocate to" << endl;
 					}
 					//continue with translation process
 				}
@@ -791,7 +791,7 @@ int main(int argc,char* argv[])
 							//cout << "write tlb hit" << endl;
 							//cout << "write pa: " << tlb.f[tlbIndex] + v.w << endl;	
 							//cout << "tlbIndex: " << tlbIndex << endl;
-							cout << "write h " << tlb.f[tlbIndex] + v.w << " ";// << endl;
+							cout << "h " << tlb.f[tlbIndex] + v.w << " ";// << endl;
 						//	printTLB();
 							updateTLBHit(tlbIndex);
 						//	printTLB();
@@ -801,7 +801,7 @@ int main(int argc,char* argv[])
 						{
 						//	cout << "write tlb miss" << endl;
 						//	cout << "write physical_addresss: " << PM[PM[v.s] + v.p] + v.w << endl;
-							cout << "write m " << PM[PM[v.s] + v.p] + v.w << " ";//<< endl;
+							cout << "m " << PM[PM[v.s] + v.p] + v.w << " ";//<< endl;
 						//	printTLB();
 							updateTLBMiss(v);
 						//	printTLB();
@@ -826,10 +826,11 @@ int main(int argc,char* argv[])
 
 //	cout << endl;
 	//validate here that input file 1 loads in data into PM successfully
-//	for(int i = 0;i < PM_CAP;++i)
+//	for(int i = 0;i < PM_CAP;++i)	
 //	{
 //		if(PM[i] == 0) continue;
 //		cout << "PM[" << i << "] = " << PM[i] << endl;
 //	}
+
 	return 0;
 }
